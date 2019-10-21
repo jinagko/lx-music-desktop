@@ -1,7 +1,9 @@
 <template lang="pug">
   div(:class="$style.search")
     //- transition
-    div(v-if="list.length" :class="$style.list")
+    div(:class="$style.header")
+      material-tab(:class="$style.tab" :list="sources" align="left" item-key="id" item-name="name" v-model="searchSourceId")
+    div(v-if="listInfo.list.length" :class="$style.list")
       div(:class="$style.thead")
         table
           thead
@@ -17,7 +19,7 @@
       div.scroll(:class="$style.tbody" ref="dom_scrollContent")
         table
           tbody
-            tr(v-for='(item, index) in list' :key='item.songmid' @click="handleDoubleClick(index)")
+            tr(v-for='(item, index) in listInfo.list' :key='item.songmid' @click="handleDoubleClick(index)")
               td.nobreak.center(style="width: 37px;" @click.stop)
                 material-checkbox(:id="index.toString()" v-model="selectdData" :value="item")
               td.break(style="width: 25%;")
@@ -26,16 +28,21 @@
                 span.badge.badge-success(v-if="item._types.ape || item._types.flac") 无损
               td.break(style="width: 20%;") {{item.singer}}
               td.break(style="width: 25%;") {{item.albumName}}
-              td(style="width: 15%;")
-                material-list-buttons(:index="index" :remove-btn="false" @btn-click="handleListBtnClick")
-              td(style="width: 10%;") {{item.interval}}
+              td(style="width: 15%; padding-left: 0; padding-right: 0;")
+                material-list-buttons(:index="index" :remove-btn="false" :class="$style.listBtn"
+                  :play-btn="item.source == 'kw' || !isAPITemp"
+                  :download-btn="item.source == 'kw' || !isAPITemp"
+                  @btn-click="handleListBtnClick")
+              td(style="width: 10%;") {{item.interval || '--/--'}}
         div(:class="$style.pagination")
-          material-pagination(:count="listInfo.total" :limit="limit" :page="page" @btn-click="handleTogglePage")
+          material-pagination(:count="listInfo.total" :limit="listInfo.limit" :page="page" @btn-click="handleTogglePage")
     div(v-else :class="$style.noitem")
       p 搜我所想~~😉
     material-download-modal(:show="isShowDownload" :musicInfo="musicInfo" @select="handleAddDownload" @close="isShowDownload = false")
     material-download-multiple-modal(:show="isShowDownloadMultiple" :list="selectdData" @select="handleAddDownloadMultiple" @close="isShowDownloadMultiple = false")
-    material-flow-btn(:show="isShowEditBtn" :remove-btn="false" @btn-click="handleFlowBtnClick")
+    material-flow-btn(:show="isShowEditBtn && (searchSourceId == 'kw' || searchSourceId == 'all' || !isAPITemp)" :remove-btn="false" @btn-click="handleFlowBtnClick")
+    material-list-add-modal(:show="isShowListAdd" :musicInfo="musicInfo" @close="isShowListAdd = false")
+    material-list-add-multiple-modal(:show="isShowListAddMultiple" :musicList="selectdData" @close="handleListAddModalClose")
 </template>
 
 <script>
@@ -57,25 +64,31 @@ export default {
       isIndeterminate: false,
       isShowEditBtn: false,
       isShowDownloadMultiple: false,
+      searchSourceId: null,
+      isShowListAdd: false,
+      isShowListAddMultiple: false,
     }
   },
   beforeRouteUpdate(to, from, next) {
     if (to.query.text === undefined) return
-    if (to.query.text === '') {
-      this.clearList()
-    } else {
-      this.text = to.query.text
-      this.page = 1
-      this.handleSearch(this.text, this.page)
-    }
+    this.text = to.query.text
+    this.page = 1
+    this.handleSearch(this.text, this.page)
     next()
   },
   mounted() {
     // console.log('mounted')
+
+    // 处理搜索源不存在时页面报错的问题
+    if (!this.sourceList[this.setting.search.searchSource]) {
+      this.setSearchSource({
+        searchSource: 'kw',
+      })
+    }
+    this.searchSourceId = this.setting.search.searchSource
     if (this.$route.query.text === undefined) {
-      let info = this.$store.getters['search/info']
-      this.text = info.text
-      this.page = info.page
+      this.text = this.$store.getters['search/searchText']
+      this.page = this.listInfo.page
     } else if (this.$route.query.text === '') {
       this.clearList()
     } else {
@@ -89,30 +102,49 @@ export default {
       const len = n.length
       if (len) {
         this.isSelectAll = true
-        this.isIndeterminate = len !== this.list.length
+        this.isIndeterminate = len !== this.listInfo.list.length
         this.isShowEditBtn = true
       } else {
         this.isSelectAll = false
         this.isShowEditBtn = false
       }
     },
-    list() {
+    'listInfo.list'() {
       this.resetSelect()
+    },
+    searchSourceId(n) {
+      if (n === this.setting.search.searchSource) return
+      this.$nextTick(() => {
+        this.page = 1
+        this.handleSearch(this.text, this.page)
+      })
+      this.setSearchSource({
+        searchSource: n,
+      })
     },
   },
   computed: {
-    ...mapGetters(['userInfo']),
-    ...mapGetters('search', ['list', 'limit', 'listInfo']),
+    ...mapGetters(['userInfo', 'setting']),
+    ...mapGetters('search', ['sourceList', 'allList', 'sources']),
     ...mapGetters('list', ['defaultList']),
+    listInfo() {
+      return this.setting.search.searchSource == 'all' ? this.allList : this.sourceList[this.setting.search.searchSource]
+    },
+    isAPITemp() {
+      return this.setting.apiSource == 'temp'
+    },
   },
   methods: {
+    ...mapMutations(['setSearchSource']),
     ...mapActions('search', ['search']),
     ...mapActions('download', ['createDownload', 'createDownloadMultiple']),
     ...mapMutations('search', ['clearList', 'setPage']),
-    ...mapMutations('list', ['defaultListAdd', 'defaultListAddMultiple']),
+    ...mapMutations('list', ['listAdd', 'listAddMultiple']),
     ...mapMutations('player', ['setList']),
     handleSearch(text, page) {
-      this.search({ text, page, limit: this.limit }).then(data => {
+      if (text === '') return this.clearList()
+
+      this.search({ text, page, limit: this.listInfo.limit }).then(data => {
         this.page = page
         this.$nextTick(() => {
           scrollTo(this.$refs.dom_scrollContent, 0)
@@ -135,7 +167,7 @@ export default {
     handleListBtnClick(info) {
       switch (info.action) {
         case 'download':
-          this.musicInfo = this.list[info.index]
+          this.musicInfo = this.listInfo.list[info.index]
           this.$nextTick(() => {
             this.isShowDownload = true
           })
@@ -143,7 +175,11 @@ export default {
         case 'play':
           this.testPlay(info.index)
           break
-        case 'add':
+        case 'listAdd':
+          this.musicInfo = this.listInfo.list[info.index]
+          this.$nextTick(() => {
+            this.isShowListAdd = true
+          })
           break
       }
     },
@@ -151,10 +187,11 @@ export default {
       let targetSong
       if (index == null) {
         targetSong = this.selectdData[0]
-        this.defaultListAddMultiple(this.selectdData)
+        this.listAddMultiple({ id: 'default', list: this.filterList(this.selectdData) })
       } else {
-        targetSong = this.list[index]
-        this.defaultListAdd(targetSong)
+        if (this.isAPITemp && this.listInfo.list[index].source != 'kw') return
+        targetSong = this.listInfo.list[index]
+        this.listAdd({ id: 'default', musicInfo: targetSong })
       }
       let targetIndex = this.defaultList.list.findIndex(
         s => s.songmid === targetSong.songmid
@@ -162,7 +199,7 @@ export default {
       if (targetIndex > -1) {
         this.setList({
           list: this.defaultList.list,
-          listId: 'test',
+          listId: this.defaultList.id,
           index: targetIndex,
         })
       }
@@ -175,12 +212,12 @@ export default {
       this.isShowDownload = false
     },
     handleAddDownloadMultiple(type) {
-      this.createDownloadMultiple({ list: [...this.selectdData], type })
+      this.createDownloadMultiple({ list: this.filterList(this.selectdData), type })
       this.resetSelect()
       this.isShowDownloadMultiple = false
     },
     handleSelectAllData(isSelect) {
-      this.selectdData = isSelect ? [...this.list] : []
+      this.selectdData = isSelect ? [...this.listInfo.list] : []
     },
     resetSelect() {
       this.isSelectAll = false
@@ -196,10 +233,16 @@ export default {
           this.resetSelect()
           break
         case 'add':
-          this.defaultListAddMultiple(this.selectdData)
-          this.resetSelect()
+          this.isShowListAddMultiple = true
           break
       }
+    },
+    filterList(list) {
+      return this.setting.apiSource == 'temp' ? list.filter(s => s.source == 'kw') : [...list]
+    },
+    handleListAddModalClose(isSelect) {
+      if (isSelect) this.resetSelect()
+      this.isShowListAddMultiple = false
     },
   },
 }
@@ -211,6 +254,11 @@ export default {
 .search {
   overflow: hidden;
   height: 100%;
+  display: flex;
+  flex-flow: column nowrap;
+}
+.header {
+  flex: none;
 }
 .list {
   position: relative;
@@ -218,6 +266,8 @@ export default {
   font-size: 14px;
   display: flex;
   flex-flow: column nowrap;
+  flex: auto;
+  overflow: hidden;
 }
 .thead {
   flex: none;
@@ -238,6 +288,9 @@ export default {
     }
   }
 }
+.listBtn {
+  min-height: 24px;
+}
 .pagination {
   text-align: center;
   padding: 15px 0;
@@ -245,8 +298,9 @@ export default {
   // transform: translateX(-50%);
 }
 .noitem {
+  flex: auto;
+  overflow: hidden;
   position: relative;
-  height: 100%;
   display: flex;
   flex-flow: column nowrap;
   justify-content: center;

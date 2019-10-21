@@ -1,4 +1,4 @@
-import { httpFatch } from '../../request'
+import { httpFetch } from '../../request'
 import { formatPlayTime, sizeFormate } from '../../index'
 
 export default {
@@ -35,6 +35,7 @@ export default {
   ],
   regExps: {
     listData: /global\.data = (\[.+\]);/,
+    listInfo: /global = {[\s\S]+?name: "(.+)"[\s\S]+?pic: "(.+)"[\s\S]+?};/,
   },
   getInfoUrl(tagId) {
     return tagId
@@ -80,25 +81,28 @@ export default {
           parent_name: tag.pname,
           id: tag.id,
           name: tag.name,
+          source: 'kg',
         })),
       })
     }
     return result
   },
 
-  getSongList(sortId, tagId, page) {
+  getSongList(sortId, tagId, page, tryNum = 0) {
     if (this._requestObj_list) this._requestObj_list.cancelHttp()
-    this._requestObj_list = httpFatch(
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_list = httpFetch(
       this.getSongListUrl(sortId, tagId, page)
     )
     return this._requestObj_list.promise.then(({ body }) => {
-      if (body.status !== 1) return this.getSongList(sortId, tagId, page)
+      if (body.status !== 1) return this.getSongList(sortId, tagId, page, ++tryNum)
       return this.filterList(body.special_db)
     })
   },
-  getSongListRecommend() {
+  getSongListRecommend(tryNum = 0) {
     if (this._requestObj_listRecommend) this._requestObj_listRecommend.cancelHttp()
-    this._requestObj_listRecommend = httpFatch(
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_listRecommend = httpFetch(
       'http://everydayrec.service.kugou.com/guess_special_recommend',
       {
         method: 'post',
@@ -119,7 +123,7 @@ export default {
       }
     )
     return this._requestObj_listRecommend.promise.then(({ body }) => {
-      if (body.status !== 1) return this.getSongListRecommend()
+      if (body.status !== 1) return this.getSongListRecommend(++tryNum)
       return this.filterList(body.data.special_list)
     })
   },
@@ -133,20 +137,38 @@ export default {
       img: item.img || item.imgurl,
       grade: item.grade,
       desc: item.intro,
+      source: 'kg',
     }))
   },
 
-  getListDetail(id, page) { // 获取歌曲列表内的音乐
+  getListDetail(id, page, tryNum = 0) { // 获取歌曲列表内的音乐
     if (this._requestObj_listDetail) this._requestObj_listDetail.cancelHttp()
-    this._requestObj_listDetail = httpFatch(this.getSongListDetailUrl(id))
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_listDetail = httpFetch(this.getSongListDetailUrl(id))
     return this._requestObj_listDetail.promise.then(({ body }) => {
       let listData = body.match(this.regExps.listData)
-      if (listData) listData = this.filterData(JSON.parse(RegExp.$1))
+      let listInfo = body.match(this.regExps.listInfo)
+      if (!listData) return this.getListDetail(id, page, ++tryNum)
+      listData = this.filterData(JSON.parse(listData[1]))
+      let name
+      let pic
+      if (listInfo) {
+        name = listInfo[1]
+        pic = listInfo[2]
+      }
       return {
         list: listData,
         page: 1,
         limit: 10000,
         total: listData.length,
+        source: 'kg',
+        info: {
+          name,
+          img: pic,
+          // desc: body.result.info.list_desc,
+          // author: body.result.info.userinfo.username,
+          // play_count: this.formatPlayCount(body.result.listen_num),
+        },
       }
     })
   },
@@ -206,15 +228,17 @@ export default {
   },
 
   // 获取列表信息
-  getListInfo(tagId) {
+  getListInfo(tagId, tryNum = 0) {
     if (this._requestObj_listInfo) this._requestObj_listInfo.cancelHttp()
-    this._requestObj_listInfo = httpFatch(this.getInfoUrl(tagId))
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_listInfo = httpFetch(this.getInfoUrl(tagId))
     return this._requestObj_listInfo.promise.then(({ body }) => {
-      if (body.status !== 1) return this.getListInfo(tagId)
+      if (body.status !== 1) return this.getListInfo(tagId, ++tryNum)
       return {
         limit: body.data.params.pagesize,
         page: body.data.params.p,
         total: body.data.params.total,
+        source: 'kg',
       }
     })
   },
@@ -242,14 +266,16 @@ export default {
   },
 
   // 获取标签
-  getTags() {
+  getTags(tryNum = 0) {
     if (this._requestObj_tags) this._requestObj_tags.cancelHttp()
-    this._requestObj_tags = httpFatch(this.getInfoUrl())
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_tags = httpFetch(this.getInfoUrl())
     return this._requestObj_tags.promise.then(({ body }) => {
-      if (body.status !== 1) return this.getTags()
+      if (body.status !== 1) return this.getTags(++tryNum)
       return {
         hotTag: this.filterInfoHotTag(body.data.hotTag),
         tags: this.filterTagInfo(body.data.tagids),
+        source: 'kg',
       }
     })
   },

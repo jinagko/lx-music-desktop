@@ -66,12 +66,12 @@ export default {
                 size: info[3].toLocaleUpperCase(),
               }
               break
-            case 'ape':
-              types.push({ type: 'ape', size: info[3] })
-              _types.ape = {
-                size: info[3].toLocaleUpperCase(),
-              }
-              break
+            // case 'ape':
+            //   types.push({ type: 'ape', size: info[3] })
+            //   _types.ape = {
+            //     size: info[3].toLocaleUpperCase(),
+            //   }
+            //   break
             case 'mp3':
               switch (info[1]) {
                 case '320':
@@ -81,11 +81,11 @@ export default {
                   }
                   break
                 case '192':
-                  types.push({ type: '192k', size: info[3] })
-                  _types['192k'] = {
-                    size: info[3].toLocaleUpperCase(),
-                  }
-                  break
+                //   types.push({ type: '192k', size: info[3] })
+                //   _types['192k'] = {
+                //     size: info[3].toLocaleUpperCase(),
+                //   }
+                //   break
                 case '128':
                   types.push({ type: '128k', size: info[3] })
                   _types['128k'] = {
@@ -121,7 +121,7 @@ export default {
     }
     return result
   },
-  search(str, page = 1, { limit }) {
+  search(str, page = 1, { limit } = {}) {
     if (limit != null) this.limit = limit
     // http://newlyric.kuwo.cn/newlyric.lrc?62355680
     return this.musicSearch(str, page).then(result => {
@@ -138,6 +138,8 @@ export default {
         list,
         allPage: this.allPage,
         total: this.total,
+        limit: this.limit,
+        source: 'kw',
       })
     })
   },

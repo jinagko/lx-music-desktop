@@ -18,10 +18,16 @@
 </template>
 
 <script>
+import dnscache from 'dnscache'
 import { mapMutations, mapGetters, mapActions } from 'vuex'
 import { rendererOn } from '../common/icp'
 import { isLinux } from '../common/utils'
 window.ELECTRON_DISABLE_SECURITY_WARNINGS = process.env.ELECTRON_DISABLE_SECURITY_WARNINGS
+dnscache({
+  enable: true,
+  ttl: 21600,
+  cachesize: 1000,
+})
 let win
 let body
 if (!isLinux) {
@@ -35,14 +41,15 @@ export default {
       isProd: process.env.NODE_ENV === 'production',
       isLinux,
       globalObj: {
-        apiSource: 'messoer',
+        apiSource: 'test',
+        proxy: {},
       },
       updateTimeout: null,
     }
   },
   computed: {
     ...mapGetters(['electronStore', 'setting', 'theme', 'version']),
-    ...mapGetters('list', ['defaultList']),
+    ...mapGetters('list', ['defaultList', 'loveList']),
     ...mapGetters('download', {
       downloadList: 'list',
       downloadStatus: 'downloadStatus',
@@ -66,6 +73,13 @@ export default {
       },
       deep: true,
     },
+    loveList: {
+      handler(n) {
+        // console.log(n)
+        this.electronStore.set('list.loveList', n)
+      },
+      deep: true,
+    },
     downloadList: {
       handler(n) {
         this.electronStore.set('download.list', n)
@@ -83,7 +97,7 @@ export default {
   methods: {
     ...mapActions(['getVersionInfo']),
     ...mapMutations(['setNewVersion', 'setVersionModalVisible']),
-    ...mapMutations('list', ['initDefaultList']),
+    ...mapMutations('list', ['initList']),
     ...mapMutations('download', ['updateDownloadList']),
     ...mapMutations(['setSetting']),
     init() {
@@ -129,6 +143,7 @@ export default {
 
       this.initData()
       this.globalObj.apiSource = this.setting.apiSource
+      this.globalObj.proxy = Object.assign({}, this.setting.network.proxy)
       window.globalObj = this.globalObj
     },
     enableIgnoreMouseEvents() {
@@ -148,13 +163,8 @@ export default {
     },
     initPlayList() {
       let defaultList = this.electronStore.get('list.defaultList')
-      // console.log(defaultList)
-      if (defaultList) {
-        // defaultList.list.forEach(m => {
-        //   m.typeUrl = {}
-        // })
-        this.initDefaultList(defaultList)
-      }
+      let loveList = this.electronStore.get('list.loveList')
+      this.initList({ defaultList, loveList })
     },
     initDownloadList() {
       let downloadList = this.electronStore.get('download.list')
@@ -225,8 +235,10 @@ body {
   display: flex;
   height: 100%;
   overflow: hidden;
-  background: @color-theme-bgimg center center no-repeat;
-  background-size: auto 100%;
+  background: @color-theme-bgimg @color-theme-bgposition no-repeat;
+  background-size: @color-theme-bgsize;
+  transition: background-color @transition-theme;
+  background-color: @color-theme;
 }
 
 #left {
@@ -250,7 +262,10 @@ body {
 
 each(@themes, {
   #container.@{value} {
+    background-color: ~'@{color-@{value}-theme}';
     background-image: ~'@{color-@{value}-theme-bgimg}';
+    background-size: ~'@{color-@{value}-theme-bgsize}';
+    background-position: ~'@{color-@{value}-theme-bgposition}';
     #right {
       background-color: ~'@{color-@{value}-theme_2}';
     }

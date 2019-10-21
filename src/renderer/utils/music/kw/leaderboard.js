@@ -119,24 +119,24 @@ export default {
           size: null,
         }
       }
-      if (formats.indexOf('MP3192')) {
-        types.push({ type: '192k', size: null })
-        _types['192k'] = {
-          size: null,
-        }
-      }
+      // if (formats.indexOf('MP3192')) {
+      //   types.push({ type: '192k', size: null })
+      //   _types['192k'] = {
+      //     size: null,
+      //   }
+      // }
       if (formats.indexOf('MP3H')) {
         types.push({ type: '320k', size: null })
         _types['320k'] = {
           size: null,
         }
       }
-      if (formats.indexOf('AL')) {
-        types.push({ type: 'ape', size: null })
-        _types.ape = {
-          size: null,
-        }
-      }
+      // if (formats.indexOf('AL')) {
+      //   types.push({ type: 'ape', size: null })
+      //   _types.ape = {
+      //     size: null,
+      //   }
+      // }
       if (formats.indexOf('ALFLAC')) {
         types.push({ type: 'flac', size: null })
         _types.flac = {
@@ -187,6 +187,7 @@ export default {
         list,
         limit: this.limit,
         page,
+        source: 'kw',
       }
     })
   },

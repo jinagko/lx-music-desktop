@@ -1,4 +1,4 @@
-import { httpFatch } from '../../request'
+import { httpFetch } from '../../request'
 import { formatPlayTime, decodeName } from '../../index'
 import { formatSinger } from './util'
 
@@ -8,7 +8,7 @@ export default {
   _requestObj_list: null,
   _requestObj_listDetail: null,
   limit_list: 25,
-  limit_song: 100,
+  limit_song: 1000,
   successCode: 200,
   sortList: [
     {
@@ -38,20 +38,22 @@ export default {
 
   // http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=2849349915&pn=0&rn=100&encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1
   // 获取标签
-  getTag() {
+  getTag(tryNum = 0) {
     if (this._requestObj_tags) this._requestObj_tags.cancelHttp()
-    this._requestObj_tags = httpFatch(this.tagsUrl)
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_tags = httpFetch(this.tagsUrl)
     return this._requestObj_tags.promise.then(({ body }) => {
-      if (body.code !== this.successCode) return this.getTag()
+      if (body.code !== this.successCode) return this.getTag(++tryNum)
       return this.filterTagInfo(body.data)
     })
   },
   // 获取标签
-  getHotTag() {
+  getHotTag(tryNum = 0) {
     if (this._requestObj_hotTags) this._requestObj_hotTags.cancelHttp()
-    this._requestObj_hotTags = httpFatch(this.hotTagUrl)
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_hotTags = httpFetch(this.hotTagUrl)
     return this._requestObj_hotTags.promise.then(({ body }) => {
-      if (body.code !== this.successCode) return this.getHotTag()
+      if (body.code !== this.successCode) return this.getHotTag(++tryNum)
       return this.filterInfoHotTag(body.data[0].data)
     })
   },
@@ -59,6 +61,7 @@ export default {
     return rawList.map(item => ({
       id: `${item.id}-${item.digest}`,
       name: item.name,
+      source: 'kw',
     }))
   },
   filterTagInfo(rawList) {
@@ -69,13 +72,15 @@ export default {
         parent_name: type.name,
         id: `${item.id}-${item.digest}`,
         name: item.name,
+        source: 'kw',
       })),
     }))
   },
 
   // 获取列表数据
-  getList(sortId, tagId, page) {
+  getList(sortId, tagId, page, tryNum = 0) {
     if (this._requestObj_list) this._requestObj_list.cancelHttp()
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
     let id
     let type
     if (tagId) {
@@ -85,24 +90,26 @@ export default {
     } else {
       id = null
     }
-    this._requestObj_list = httpFatch(this.getListUrl({ sortId, id, type, page }))
+    this._requestObj_list = httpFetch(this.getListUrl({ sortId, id, type, page }))
     return this._requestObj_list.promise.then(({ body }) => {
       if (!id || type == '10000') {
-        if (body.code !== this.successCode) return this.getListUrl({ sortId, id, type, page })
+        if (body.code !== this.successCode) return this.getList(sortId, id, type, page, ++tryNum)
         return {
           list: this.filterList(body.data.data),
           total: body.data.total,
           page: body.data.pn,
           limit: body.data.rn,
+          source: 'kw',
         }
       } else if (!body.length) {
-        return this.getListUrl({ sortId, id, type, page })
+        return this.getList(sortId, id, type, page, ++tryNum)
       }
       return {
         list: this.filterList2(body),
         total: 1000,
         page,
         limit: 1000,
+        source: 'kw',
       }
     })
   },
@@ -127,6 +134,7 @@ export default {
       img: item.img,
       grade: item.favorcnt / 10,
       desc: item.desc,
+      source: 'kw',
     }))
   },
   filterList2(rawData) {
@@ -148,18 +156,27 @@ export default {
   },
 
   // 获取歌曲列表内的音乐
-  getListDetail(id, page) {
+  getListDetail(id, page, tryNum = 0) {
     if (this._requestObj_listDetail) {
       this._requestObj_listDetail.cancelHttp()
     }
-    this._requestObj_listDetail = httpFatch(this.getListDetailUrl(id, page))
+    if (tryNum > 2) return Promise.reject(new Error('try max num'))
+    this._requestObj_listDetail = httpFetch(this.getListDetailUrl(id, page))
     return this._requestObj_listDetail.promise.then(({ body }) => {
-      if (body.result !== 'ok') return this.getListDetail(id, page)
+      if (body.result !== 'ok') return this.getListDetail(id, page, ++tryNum)
       return {
         list: this.filterListDetail(body.musiclist),
         page,
         limit: body.rn,
         total: body.total,
+        source: 'kw',
+        info: {
+          name: body.title,
+          img: body.pic,
+          desc: body.info,
+          author: body.uname,
+          play_count: this.formatPlayCount(body.playnum),
+        },
       }
     })
   },
@@ -205,7 +222,7 @@ export default {
     })
   },
   getTags() {
-    return Promise.all([this.getTag(), this.getHotTag()]).then(([tags, hotTag]) => ({ tags, hotTag }))
+    return Promise.all([this.getTag(), this.getHotTag()]).then(([tags, hotTag]) => ({ tags, hotTag, source: 'kw' }))
   },
 }
 

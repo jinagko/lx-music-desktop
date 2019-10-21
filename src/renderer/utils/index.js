@@ -15,8 +15,8 @@ export const getRandom = (min, max) => Math.floor(Math.random() * (max - min)) +
 
 export const sizeFormate = size => {
   // https://gist.github.com/thomseddon/3511330
-  if (!size) return '0 b'
-  let units = ['b', 'kB', 'MB', 'GB', 'TB']
+  if (!size) return '0 B'
+  let units = ['B', 'KB', 'MB', 'GB', 'TB']
   let number = Math.floor(Math.log(size) / Math.log(1024))
   return `${(size / Math.pow(1024, Math.floor(number))).toFixed(2)} ${units[number]}`
 }
@@ -43,7 +43,8 @@ export const b64DecodeUnicode = str => {
 export const decodeName = str => str.replace(/&apos;/g, '\'')
 
 export const scrollTo = (element, to, duration = 300, fn = function() {}) => {
-  const start = element.scrollTop || element.scrollY
+  if (!element) return
+  const start = element.scrollTop || element.scrollY || 0
   const change = to - start
   const increment = 10
   if (!change) {
@@ -163,7 +164,7 @@ export const isChildren = (parent, children) => {
  * @param {*} setting
  */
 export const updateSetting = setting => {
-  const defaultVersion = '1.0.7'
+  const defaultVersion = '1.0.12'
   const defaultSetting = {
     version: defaultVersion,
     player: {
@@ -174,6 +175,11 @@ export const updateSetting = setting => {
     },
     list: {
       isShowAlbumName: true,
+      isShowSource: false,
+      scroll: {
+        enable: true,
+        locations: {},
+      },
     },
     download: {
       savePath: path.join(os.homedir(), 'Desktop'),
@@ -197,6 +203,19 @@ export const updateSetting = setting => {
     odc: {
       isAutoClearSearchInput: false,
     },
+    search: {
+      searchSource: 'kw',
+      tempSearchSource: 'kw',
+    },
+    network: {
+      proxy: {
+        enable: false,
+        host: '',
+        port: '',
+        username: '',
+        password: '',
+      },
+    },
     themeId: 0,
     sourceId: 'kw',
     apiSource: 'test',
@@ -205,7 +224,6 @@ export const updateSetting = setting => {
   }
   const overwriteSetting = {
     version: defaultVersion,
-    sourceId: 'kw',
   }
 
 
@@ -268,3 +286,86 @@ export const saveLrc = (filePath, lrc) => {
     if (err) console.log(err)
   })
 }
+
+/**
+ * 生成节流函数
+ * @param {*} fn
+ * @param {*} delay
+ */
+export const throttle = (fn, delay = 100) => {
+  let timer = null
+  let _args = null
+  return function(...args) {
+    _args = args
+    if (timer) return
+    timer = setTimeout(() => {
+      timer = null
+      fn.apply(this, _args)
+    }, delay)
+  }
+}
+
+/**
+ * 生成防抖函数
+ * @param {*} fn
+ * @param {*} delay
+ */
+export const debounce = (fn, delay = 100) => {
+  let timer = null
+  let _args = null
+  return function(...args) {
+    _args = args
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      fn.apply(this, _args)
+    }, delay)
+  }
+}
+
+const async_removeItem = (arr, num, callback) => window.requestAnimationFrame(() => {
+  let len = arr.length
+  if (len > num) {
+    arr.splice(0, num)
+    return async_removeItem(arr, num, callback)
+  } else {
+    arr.splice(0, len)
+    return callback()
+  }
+})
+const async_addItem = (arr, newArr, num, callback) => window.requestAnimationFrame(() => {
+  let len = newArr.length
+  if (len > num) {
+    arr.push(...newArr.splice(0, num))
+    return async_addItem(arr, newArr, num, callback)
+  } else {
+    arr.push(...newArr.splice(0, len))
+    return callback()
+  }
+})
+/**
+ * 异步设置数组
+ * @param {*} from 原数组
+ * @param {*} to 设置后的数组内容
+ * @param {*} num 每次设置的个数
+ */
+export const asyncSetArray = (from, to, num = 100) => new Promise(resolve => {
+  async_removeItem(from, num, () => {
+    async_addItem(from, Array.from(to), num, () => {
+      resolve()
+    })
+  })
+})
+
+
+/**
+ * 获取缓存大小
+ * @param {*} win
+ */
+export const getCacheSize = () => remote.getCurrentWindow().webContents.session.getCacheSize()
+
+/**
+ * 清除缓存
+ * @param {*} win
+ */
+export const clearCache = () => remote.getCurrentWindow().webContents.session.clearCache()

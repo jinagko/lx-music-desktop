@@ -2,8 +2,9 @@ export default {
   setTheme(state, val) {
     state.setting.themeId = val
   },
-  setSource(state, val) {
-    state.setting.sourceId = val
+  setSearchSource(state, { searchSource, tempSearchSource }) {
+    if (searchSource != null) state.setting.search.searchSource = searchSource
+    if (tempSearchSource != null) state.setting.search.tempSearchSource = tempSearchSource
   },
   setSetting(state, val) {
     state.setting = val
@@ -16,6 +17,9 @@ export default {
     if (tagInfo != null) state.setting.songList.tagInfo = tagInfo
     if (sortId != null) state.setting.songList.sortId = sortId
     if (source != null) state.setting.songList.source = source
+  },
+  setListScroll(state, { id, location }) {
+    state.setting.list.scroll.locations[id] = location
   },
   setNewVersion(state, val) {
     // val.history.forEach(ver => {

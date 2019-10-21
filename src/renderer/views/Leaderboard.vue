@@ -6,6 +6,8 @@
     material-song-list(v-model="selectdData" @action="handleSongListAction" :source="source" :page="page" :limit="info.limit" :total="info.total" :list="list")
     material-download-modal(:show="isShowDownload" :musicInfo="musicInfo" @select="handleAddDownload" @close="isShowDownload = false")
     material-download-multiple-modal(:show="isShowDownloadMultiple" :list="selectdData" @select="handleAddDownloadMultiple" @close="isShowDownloadMultiple = false")
+    material-list-add-modal(:show="isShowListAdd" :musicInfo="musicInfo" @close="isShowListAdd = false")
+    material-list-add-multiple-modal(:show="isShowListAddMultiple" :musicList="selectdData" @close="handleListAddModalClose")
 </template>
 
 <script>
@@ -21,6 +23,8 @@ export default {
       musicInfo: null,
       selectdData: [],
       isShowDownloadMultiple: false,
+      isShowListAdd: false,
+      isShowListAddMultiple: false,
     }
   },
   computed: {
@@ -56,7 +60,7 @@ export default {
     ...mapMutations(['setLeaderboard']),
     ...mapActions('leaderboard', ['getList']),
     ...mapActions('download', ['createDownload', 'createDownloadMultiple']),
-    ...mapMutations('list', ['defaultListAdd', 'defaultListAddMultiple']),
+    ...mapMutations('list', ['listAdd', 'listAddMultiple']),
     ...mapMutations('player', ['setList']),
     handleListBtnClick(info) {
       switch (info.action) {
@@ -72,19 +76,23 @@ export default {
         case 'search':
           this.handleSearch(info.index)
           break
-        // case 'add':
-        //   break
+        case 'listAdd':
+          this.musicInfo = this.list[info.index]
+          this.$nextTick(() => {
+            this.isShowListAdd = true
+          })
+          break
       }
     },
     testPlay(index) {
       let targetSong
       if (index == null) {
         targetSong = this.selectdData[0]
-        this.defaultListAddMultiple(this.selectdData)
+        this.listAddMultiple({ id: 'default', list: this.selectdData })
         this.resetSelect()
       } else {
         targetSong = this.list[index]
-        this.defaultListAdd(targetSong)
+        this.listAdd({ id: 'default', musicInfo: targetSong })
       }
       let targetIndex = this.defaultList.list.findIndex(
         s => s.songmid === targetSong.songmid
@@ -92,7 +100,7 @@ export default {
       if (targetIndex > -1) {
         this.setList({
           list: this.defaultList.list,
-          listId: 'test',
+          listId: this.defaultList.id,
           index: targetIndex,
         })
       }
@@ -117,13 +125,18 @@ export default {
     },
     handleAddDownloadMultiple(type) {
       switch (this.source) {
-        case 'kg':
+        // case 'kg':
+        case 'tx':
         case 'wy':
           type = '128k'
       }
       this.createDownloadMultiple({ list: [...this.selectdData], type })
       this.isShowDownloadMultiple = false
       this.resetSelect()
+    },
+    handleListAddModalClose(isSelect) {
+      if (isSelect) this.resetSelect()
+      this.isShowListAddMultiple = false
     },
     handleFlowBtnClick(action) {
       switch (action) {
@@ -134,8 +147,7 @@ export default {
           this.testPlay()
           break
         case 'add':
-          this.defaultListAddMultiple(this.selectdData)
-          this.resetSelect()
+          this.isShowListAddMultiple = true
           break
       }
     },

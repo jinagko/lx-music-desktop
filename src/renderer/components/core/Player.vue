@@ -9,8 +9,9 @@ div(:class="$style.player")
       div(:class="$style.container")
         div(:class="$style.title" @click="handleCopy(title)" :title="title + '（点击复制）'") {{title}}
         div(:class="$style.volumeContent")
-          div(:class="$style.volume" @click.stop='handleChangeVolume' :title="`当前音量：${volumeStr}%`")
-            div(:class="$style.volumeBar" :style="{ width: volumeStr + '%' }")
+          div(:class="$style.volume")
+            div(:class="$style.volumeBar" :style="{ transform: `scaleX(${volume || 0})` }")
+          div(:class="$style.volumeMask" @mousedown="handleVolumeMsDown" ref="dom_volumeMask" :title="`当前音量：${parseInt(volume * 100)}%`")
 
         //- div(:class="$style.playBtn" @click='handleNext' title="音量")
           svg(version='1.1' xmlns='http://www.w3.org/2000/svg' xlink='http://www.w3.org/1999/xlink' height='100%' viewBox='0 0 291.063 291.064' space='preserve')
@@ -23,11 +24,11 @@ div(:class="$style.player")
             use(xlink:href='#icon-pause')
           svg(v-else version='1.1' xmlns='http://www.w3.org/2000/svg' xlink='http://www.w3.org/1999/xlink' height='100%' viewBox='0 0 170 170' space='preserve')
             use(xlink:href='#icon-play')
-    div(:class="$style.column2" @click='setProgess' ref="dom_progress")
+    div(:class="$style.column2")
       div(:class="$style.progress")
-        //- div(:class="[$style.progressBar, $style.progressBar1]" :style="{ width: progress + '%' }")
-        div(:class="[$style.progressBar, $style.progressBar2]" :style="{ width: (progress * 100 || 0) + '%' }")
-
+        //- div(:class="[$style.progressBar, $style.progressBar1]" :style="{ transform: `scaleX(${progress || 0})` }")
+        div(:class="[$style.progressBar, $style.progressBar2]" :style="{ transform: `scaleX(${progress || 0})` }")
+      div(:class="$style.progressMask" @click='setProgess' ref="dom_progress")
     div(:class="$style.column3")
       span {{nowPlayTimeStr}}
       span(:class="$style.statusText") {{status}}
@@ -48,9 +49,10 @@ div(:class="$style.player")
 <script>
 import Lyric from 'lrc-file-parser'
 import { rendererSend } from '../../../common/icp'
-import { formatPlayTime2, getRandom, checkPath, setTitle, clipboardWriteText } from '../../utils'
+import { formatPlayTime2, getRandom, checkPath, setTitle, clipboardWriteText, debounce } from '../../utils'
 import { mapGetters, mapActions, mapMutations } from 'vuex'
 import { requestMsg } from '../../utils/message'
+import { isMac } from '../../../common/utils'
 
 export default {
   data() {
@@ -80,6 +82,14 @@ export default {
       delayNextTimeout: null,
       audioErrorTime: 0,
       retryNum: 0,
+      isMac,
+      volumeEvent: {
+        isMsDown: false,
+        msDownX: 0,
+        msDownVolume: 0,
+      },
+      handleVolumeMsMoveFn: null,
+      handleVolumeMsUpFn: null,
     }
   },
   computed: {
@@ -100,14 +110,10 @@ export default {
       return this.maxPlayTime ? formatPlayTime2(this.maxPlayTime) : '00:00'
     },
     progress() {
-      // return 50
       return this.nowPlayTime / this.maxPlayTime || 0
     },
     isAPITemp() {
       return this.setting.apiSource == 'temp'
-    },
-    volumeStr() {
-      return parseInt(this.volume * 100)
     },
   },
   mounted() {
@@ -115,6 +121,16 @@ export default {
     this.$nextTick(() => {
       this.setProgessWidth()
     })
+    this.handleSaveVolume = debounce(volume => {
+      this.setVolume(volume)
+    }, 300)
+
+    document.addEventListener('mousemove', this.handleVolumeMsMoveFn = this.handleVolumeMsMove.bind(this))
+    document.addEventListener('mouseup', this.handleVolumeMsUpFn = this.handleVolumeMsUp.bind(this))
+  },
+  beforeDestroy() {
+    document.removeEventListener('mousemove', this.handleVolumeMsMoveFn)
+    document.removeEventListener('mouseup', this.handleVolumeMsUpFn)
   },
   watch: {
     changePlay(n) {
@@ -214,7 +230,7 @@ export default {
           this.audio.currentTime = this.audioErrorTime
           this.audioErrorTime = 0
         }
-        if (!this.targetSong.interval && this.listId != 'download') this.updateMusicInfo({ index: this.playIndex, data: { interval: formatPlayTime2(this.maxPlayTime) } })
+        if (!this.targetSong.interval && this.listId != 'download') this.updateMusicInfo({ id: 'default', index: this.playIndex, data: { interval: formatPlayTime2(this.maxPlayTime) } })
         this.status = '音乐加载中...'
       })
       this.audio.addEventListener('loadstart', () => {
@@ -371,10 +387,11 @@ export default {
     getPlayType(highQuality, songInfo) {
       switch (songInfo.source) {
         case 'wy':
-        case 'kg':
+        case 'tx':
+        // case 'kg':
           return '128k'
       }
-      let type = songInfo._types['192k'] ? '192k' : '128k'
+      let type = '128k'
       if (highQuality && songInfo._types['320k']) type = '320k'
       return type
     },
@@ -445,16 +462,29 @@ export default {
     clearAppTitle() {
       setTitle()
     },
-    handleChangeVolume(e) {
+    handleVolumeMsDown(e) {
+      this.volumeEvent.isMsDown = true
+      this.volumeEvent.isMsMoved = false
+      this.volumeEvent.msDownX = e.clientX
+
       let val = e.offsetX / 70
       if (val < 0) val = 0
       if (val > 1) val = 1
-      if (val > 0.97) val = 1
+
       this.volume = val
+      this.volumeEvent.msDownVolume = val
+      // console.log(val)
       if (this.audio) this.audio.volume = this.volume
     },
-    handleSaveVolume(volume) {
-      this.setVolume(volume)
+    handleVolumeMsUp(e) {
+      this.volumeEvent.isMsDown = false
+    },
+    handleVolumeMsMove(e) {
+      if (!this.volumeEvent.isMsDown) return
+      let val = this.volumeEvent.msDownVolume + (e.clientX - this.volumeEvent.msDownX) / 70
+      this.volume = val < 0 ? 0 : val > 1 ? 1 : val
+      if (this.audio) this.audio.volume = this.volume
+      // console.log(val)
     },
     handleCopy(text) {
       clipboardWriteText(text)
@@ -486,6 +516,7 @@ export default {
   transition: @transition-theme;
   transition-property: color;
   flex: none;
+  padding: 2px;
 
   svg {
     fill: currentColor;
@@ -495,7 +526,7 @@ export default {
     max-height: 100%;
     transition: @transition-theme;
     transition-property: border-color;
-    border: 2px solid @color-theme_2-background_2;
+    // border: 2px solid @color-theme_2-background_1;
   }
 }
 .right {
@@ -530,14 +561,20 @@ export default {
 }
 
 .volume-content {
+  position: relative;
   width: 100px;
   display: flex;
   align-items: center;
   padding: 0 15px;
+  opacity: .5;
+  transition: opacity @transition-theme;
+  &:hover {
+    opacity: 1;
+  }
 }
 
 .volume {
-  cursor: pointer;
+  // cursor: pointer;
   width: 100%;
   height: 0.25em;
   border-radius: 10px;
@@ -554,13 +591,26 @@ export default {
   position: absolute;
   left: 0;
   top: 0;
-  width: 0;
+  transform: scaleX(0);
+  transform-origin: 0;
+  transition-property: transform;
+  transition-timing-function: ease;
+  width: 100%;
   height: 100%;
   border-radius: @radius-progress-border;
   transition-duration: 0.2s;
   background-color: @color-theme;
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.2);
-  opacity: .5;
+}
+
+.volume-mask {
+  position: absolute;
+  left: 15px;
+  right: 15px;
+  top: 0;
+  width: 70%;
+  height: 100%;
+  cursor: pointer;
 }
 
 .play-btn {
@@ -575,7 +625,7 @@ export default {
   transition: @transition-theme;
   transition-property: color;
   color: @color-theme;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.1s ease;
   opacity: 1;
   cursor: pointer;
 
@@ -591,7 +641,7 @@ export default {
 .column2 {
   flex: none;
   padding: 3px 0;
-  cursor: pointer;
+  position: relative;
 }
 
 .progress {
@@ -606,12 +656,23 @@ export default {
   position: relative;
   border-radius: @radius-progress-border;
 }
+.progress-mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
 .progress-bar {
   position: absolute;
   left: 0;
   top: 0;
-  width: 0;
+  width: 100%;
   height: 100%;
+  transform-origin: 0;
+  transition-property: transform;
+  transition-timing-function: ease-out;
   border-radius: @radius-progress-border;
 }
 .progress-bar1 {
@@ -672,9 +733,9 @@ each(@themes, {
     }
     .left {
       color: ~'@{color-@{value}-theme}';
-      img {
-        border-color: ~'@{color-@{value}-theme_2-background_2}';
-      }
+      // img {
+      //   border-color: ~'@{color-@{value}-theme_2-background_1}';
+      // }
     }
     .play-btn {
       color: ~'@{color-@{value}-theme}';

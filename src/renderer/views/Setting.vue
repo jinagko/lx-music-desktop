@@ -35,6 +35,19 @@ div.scroll(:class="$style.setting")
       h3 任务栏播放进度条
       div
         material-checkbox(id="setting_player_showTaskProgess" v-model="current_setting.player.isShowTaskProgess" label="是否启用")
+    dt 列表设置
+    dd(title='是否显示歌曲源')
+      h3 是否显示歌曲源（仅对我的音乐分类有效）
+      div
+        material-checkbox(id="setting_list_showSource_enable" v-model="current_setting.list.isShowSource" label="是否显示")
+    dd(title='是否恢复播放列表滚动条位置')
+      h3 恢复列表滚动位置（仅对我的音乐分类有效）
+      div
+        material-checkbox(id="setting_list_scroll_enable" v-model="current_setting.list.scroll.enable" label="是否启用")
+    //- dd(title='播放列表是否显示专辑栏')
+      h3 专辑栏
+      div
+        material-checkbox(id="setting_list_showalbum" v-model="current_setting.list.isShowAlbumName" label="是否显示专辑栏")
     dt 下载设置
     dd(title='下载歌曲保存的路径')
       h3 下载路径
@@ -57,11 +70,18 @@ div.scroll(:class="$style.setting")
       h3 歌词下载
       div
         material-checkbox(id="setting_download_isDownloadLrc" v-model="current_setting.download.isDownloadLrc" label="是否启用")
-    //- dt 列表设置
-    //- dd(title='播放列表是否显示专辑栏')
-      h3 专辑栏
+    dt 网络设置
+    dd
+      h3 代理设置（歌曲下载暂不支持代理）
       div
-        material-checkbox(id="setting_list_showalbum" v-model="current_setting.list.isShowAlbumName" label="是否显示专辑栏")
+        p
+          material-checkbox(id="setting_network_proxy_enable" v-model="current_setting.network.proxy.enable" @change="handleProxyChange('enable')" label="是否启用")
+        p
+          material-input(:class="$style.gapLeft" v-model="current_setting.network.proxy.host" @change="handleProxyChange('host')" placeholder="主机")
+          material-input(:class="$style.gapLeft" v-model="current_setting.network.proxy.port" @change="handleProxyChange('port')" placeholder="端口")
+        p
+          material-input(:class="$style.gapLeft" v-model="current_setting.network.proxy.username" @change="handleProxyChange('username')" placeholder="用户名")
+          material-input(:class="$style.gapLeft" v-model="current_setting.network.proxy.password" @change="handleProxyChange('password')" type="password" placeholder="密码")
     dt 强迫症设置
     dd
       h3 离开搜索界面时清空搜索框
@@ -80,6 +100,15 @@ div.scroll(:class="$style.setting")
       div
         material-btn(:class="[$style.btn, $style.gapLeft]" min @click="handleImportAllData") 导入
         material-btn(:class="[$style.btn, $style.gapLeft]" min @click="handleExportAllData") 导出
+    dt 其他
+    dd
+      h3 缓存大小（清理缓存后图片等资源将需要重新下载）
+      div
+        p
+          | 软件已使用缓存大小：
+          span.auto-hidden(title="当前已用缓存") {{cacheSize}}
+        p
+          material-btn(:class="$style.btn" min @click="clearCache") 清理缓存
     dt 软件更新
     dd
       p.small
@@ -118,7 +147,7 @@ div.scroll(:class="$style.setting")
         | 支持作者哦~~🍻
       p
         span 如果你资金充裕，还可以
-        material-btn(@click="handleOpenUrl('https://cdn.stsky.cn/qrc.png')" min title="土豪，你好 🙂") 打赏下作者
+        material-btn(@click="handleOpenUrl('https://cdn.stsky.cn/qrc.png')" min title="土豪，你好 🙂") 捐赠下作者
         span ，以帮我分担点服务器费用~❤️
       p.small
         |  本软件仅用于学习交流使用，禁止将本软件用于
@@ -137,7 +166,17 @@ div.scroll(:class="$style.setting")
 
 <script>
 import { mapGetters, mapMutations } from 'vuex'
-import { openDirInExplorer, openSelectDir, openSaveDir, updateSetting, openUrl, clipboardWriteText } from '../utils'
+import {
+  openDirInExplorer,
+  openSelectDir,
+  openSaveDir,
+  updateSetting,
+  openUrl,
+  clipboardWriteText,
+  getCacheSize,
+  clearCache,
+  sizeFormate,
+} from '../utils'
 import { rendererSend } from '../../common/icp'
 import fs from 'fs'
 
@@ -146,7 +185,7 @@ export default {
   name: 'Setting',
   computed: {
     ...mapGetters(['setting', 'themes', 'version']),
-    ...mapGetters('list', ['defaultList']),
+    ...mapGetters('list', ['defaultList', 'loveList']),
     isLatestVer() {
       return this.version.newVersion && this.version.version === this.version.newVersion.version
     },
@@ -162,12 +201,26 @@ export default {
         },
         list: {
           isShowAlbumName: true,
+          isShowSource: true,
+          scroll: {
+            enable: true,
+            locations: {},
+          },
         },
         download: {
           savePath: '',
           fileName: '歌名 - 歌手',
           isDownloadLrc: false,
           isEmbedPic: true,
+        },
+        network: {
+          proxy: {
+            enable: false,
+            host: '',
+            port: '',
+            username: '',
+            password: '',
+          },
         },
         odc: {
           isAutoClearSearchInput: false,
@@ -209,7 +262,7 @@ export default {
         // },
         {
           id: 'test',
-          label: '测试接口（软件的大部分功能可用，该接口访问速度略慢）',
+          label: '测试接口（几乎软件的所有功能都可用，该接口访问速度略慢）',
           disabled: false,
         },
         {
@@ -232,6 +285,7 @@ export default {
           value: '歌名',
         },
       ],
+      cacheSize: '0 B',
     }
   },
   watch: {
@@ -257,9 +311,10 @@ export default {
   },
   methods: {
     ...mapMutations(['setSetting', 'setVersionModalVisible']),
-    ...mapMutations('list', ['setDefaultList']),
+    ...mapMutations('list', ['setList']),
     init() {
       this.current_setting = JSON.parse(JSON.stringify(this.setting))
+      this.getCacheSize()
     },
     handleChangeSavePath() {
       openSelectDir({
@@ -296,19 +351,30 @@ export default {
       })
     },
     importPlayList(path) {
-      let defautlList
+      let listData
       try {
-        defautlList = JSON.parse(fs.readFileSync(path, 'utf8'))
+        listData = JSON.parse(fs.readFileSync(path, 'utf8'))
       } catch (error) {
         return
       }
-      if (defautlList.type !== 'defautlList') return
-      this.setDefaultList(defautlList.data.list)
+      console.log(listData.type)
+
+      // 兼容0.6.2及以前版本的列表数据
+      if (listData.type === 'defautlList') return this.setList({ id: 'default', list: listData.data.list })
+
+      if (listData.type !== 'playList') return
+
+      for (const list of listData.data) {
+        this.setList({ id: list.id, list: list.list })
+      }
     },
     exportPlayList(path) {
       const data = {
-        type: 'defautlList',
-        data: this.defaultList,
+        type: 'playList',
+        data: [
+          this.defaultList,
+          this.loveList,
+        ],
       }
       fs.writeFile(path, JSON.stringify(data, null, 2), 'utf8', err => {
         console.log(err)
@@ -324,13 +390,20 @@ export default {
       if (allData.type !== 'allData') return
       this.setSetting(updateSetting(allData.setting))
       this.init()
-      this.setDefaultList(allData.defaultList.list)
+      if (allData.defaultList) return this.setList({ id: 'default', list: allData.defaultList.list })
+
+      for (const list of allData.playList) {
+        this.setList({ id: list.id, list: list.list })
+      }
     },
     exportAllData(path) {
       let allData = {
         type: 'allData',
         setting: this.setting,
-        defaultList: this.defaultList,
+        playList: [
+          this.defaultList,
+          this.loveList,
+        ],
       }
       fs.writeFile(path, JSON.stringify(allData, null, 2), 'utf8', err => {
         console.log(err)
@@ -416,8 +489,18 @@ export default {
     clipboardWriteText(text) {
       clipboardWriteText(text)
     },
-    openRewardModal() {
-
+    handleProxyChange(key) {
+      window.globalObj.proxy[key] = this.current_setting.network.proxy[key]
+    },
+    getCacheSize() {
+      getCacheSize().then(size => {
+        this.cacheSize = sizeFormate(size)
+      })
+    },
+    clearCache() {
+      clearCache().then(() => {
+        this.getCacheSize()
+      })
     },
   },
 }
